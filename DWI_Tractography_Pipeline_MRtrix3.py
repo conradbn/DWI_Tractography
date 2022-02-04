@@ -326,8 +326,8 @@ def generate_streamlines_and_run_sift2(path, n_streamlines):
     # that they are more closely related to true fiber densities. This allows
     # for more valid quantitative tractography measures.
     # NOTE - to make use of SIFT2 output, the weights txt file must be included
-    # in further track quantitification tools using "-tck_weights_in" flag
-    # ALSO NOTE - the I removed the -fd_scale_gm flag due to the use of
+    # in further track quantification tools using "-tck_weights_in" flag
+    # ALSO NOTE - I removed the -fd_scale_gm flag due to the use of
     # multi-tissue FOD estimation
     execute(f'tcksift2 -force tracks_{n_streamlines}.tck fod_wm_norm.mif tracks_{n_streamlines}_sift2_weights.txt \
         -act aseg_5ttgen.mif -info \
