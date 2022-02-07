@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import subprocess
 from subprocess import run
@@ -44,8 +45,9 @@ Added QA figure generation
 
 '''
 
+
 def execute(command):
-    ## Shell script execution
+    # Shell script execution
     # Print output to notebook and save to text file
     output = run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     print(output.stdout)
@@ -377,52 +379,71 @@ def create_post_process_QA_figure(path_out):
         execute(f'mrview dwi_raw.mif -mode 2 -volume {firstvol} -interpolation 0 -noannot -size 1000,1000 -autoscale \
             -capture.folder QA -capture.prefix QA_raw_b{val}_ -capture.grab -exit')
 
-        # Noise image
+    # Noise image
     execute('mrview dwi_raw_noise.mif -mode 2 -interpolation 0 -noannot -size 1000,1000  \
         -capture.folder QA -capture.prefix QA_noise_ -capture.grab -exit')
+    image_label_dict.update({'QA_noise_0000.png': 'Estimated noise map'})
 
     # B0 image pair (revPE)
     execute('mrview dwi_raw_dn_b0_pair.mif -mode 1 -plane 2 -volume 0 -interpolation 0 -noannot -size 1000,1000  \
         -capture.folder QA -capture.prefix QA_b0_ -capture.grab -exit')
+    image_label_dict.update({'QA_b0_0000.png': 'B0 image (primary phase encode dir.)'})
+
     execute('mrview dwi_raw_dn_b0_pair.mif -mode 1 -plane 2 -volume 1 -interpolation 0 -autoscale -noannot -size 1000,1000 \
         -capture.folder QA -capture.prefix QA_b0_revPE_ -capture.grab -exit')
+    image_label_dict.update({'QA_b0_revPE_0000.png': 'B0 image (reverse phase encode dir.)'})
 
     # Topup corrected B0
     execute('mrview dwi_proc_b0.nii -mode 1 -plane 2 -interpolation 0 -autoscale -noannot -size 1000,1000  \
         -capture.folder QA -capture.prefix QA_b0_topup_ -capture.grab -exit')
+    image_label_dict.update({'QA_b0_topup_0000.png': 'Distortion-corrected B0 image'})
 
-    # CNR Map
-    execute('mrview QA/eddy_cnr_maps.nii.gz -mode 2 -interpolation 0 -noannot -size 1000,1000 \
-        -colourmap 4 -colourbar 1 -intensity_range 1,2.5 \
-        -capture.folder QA -capture.prefix QA_cnr_ -capture.grab -exit')
+    # CNR Map from each b-shell
+    for ii in range(bval.shape[1]):
+        val = int(bval[0, ii])
+        # Build dictionary for CNR QA figures
+        image_label_dict.update({f'QA_cnr_b{val}_0000.png': f'CNR map, b={val}'})
+        execute(f'mrview QA/eddy_cnr_maps.nii.gz -volume {str(ii)} -mode 2 -interpolation 0 -noannot -size 1000,1000 \
+            -colourmap 4 -colourbar 1 -intensity_range 1,3 \
+            -capture.folder QA -capture.prefix QA_cnr_b{val}_ -capture.grab -exit')
+
+    # Add Motion Plots to Dictionary (*NOTE* these are created at the END of this function)
+    image_label_dict.update({'QA_motion_and_intensity.png': ''})
 
     # Masks
     execute('mrview QA/eddy_mask.nii -mode 2 -interpolation 0 -noannot -size 1000,1000 -intensity_range 0,1 \
-        -overlay.load dwi_proc_mask.mif -overlay.colourmap 3 -overlay.interpolation 0 -overlay.intensity 0,1 \
+        -overlay.load dwi_proc_mask.mif -overlay.colourmap 3 -overlay.interpolation 0 \
+        -overlay.intensity 0,1 -overlay.opacity 0.8 \
         -capture.folder QA -capture.prefix QA_masks_ -capture.grab -exit')
+    image_label_dict.update({'QA_masks_0000.png': 'Eddy mask (white), MRtrix3 mask (red)'})
 
     # FA map (white matter should be bright), scale 0-1
     execute('mrview dwi_proc_FA.mif -mode 2 -interpolation 0 -noannot -size 1000,1000  -colourbar 1 -intensity_range 0,1 \
         -capture.folder QA -capture.prefix QA_fa_ -capture.grab -exit')
+    image_label_dict.update({'QA_fa_0000.png': 'Fractional anisotropy (FA) map (WM should be bright)'})
 
     # MD map (csf should be bright), scale 0-.003
     execute('mrview dwi_proc_MD.mif -mode 2 -interpolation 0 -noannot -size 1000,1000 -colourbar 1 -intensity_range 0,.003 \
         -capture.folder QA -capture.prefix QA_md_ -capture.grab -exit')
+    image_label_dict.update({'QA_md_0000.png': 'Mean diffusitivity (MD) map (CSF should be bright)'})
 
     # 5TT struct over b0
     execute('mrview dwi_proc_b0.nii -mode 2 -interpolation 0 -noannot -size 1000,1000 \
         -overlay.load struct.2dwi.nii -overlay.colourmap 1 -overlay.interpolation 0 -overlay.opacity 0.3 \
         -capture.folder QA -capture.prefix QA_struct2dwi_ -capture.grab -exit')
+    image_label_dict.update({'QA_struct2dwi_0000.png': 'Structural registration to DWI'})
 
     # 5TT GMWMI
     execute('mrview dwi_proc_b0.nii -mode 2 -interpolation 0 -noannot -size 1000,1000 \
         -overlay.load aseg_5tt_gmwmi.mif -overlay.colourmap 1 -overlay.intensity 0,1 -overlay.opacity 0.8 \
         -capture.folder QA -capture.prefix QA_gmwmi_ -capture.grab -exit')
+    image_label_dict.update({'QA_gmwmi_0000.png': 'Gray/White matter interface derived from FreeSurfer output'})
 
     # Dhollander voxel selection (wm=blue, csf=red, gm=green)
     execute('mrview dwi_proc_b0.nii -mode 2 -interpolation 0 -noannot -size 1000,1000 \
         -overlay.load dhollander_voxels_sub.mif -overlay.interpolation 0 \
         -capture.folder QA -capture.prefix QA_dhollander_voxels_ -capture.grab -exit')
+    image_label_dict.update({'QA_dhollander_voxels_0000.png': 'Dhollander algo. voxels (wm=blue,csf=red,gm=green)'})
 
     # ODF-related images
     execute(
@@ -430,30 +451,36 @@ def create_post_process_QA_figure(path_out):
     execute('mrconvert -coord 3 0 fod_wm.mif - | mrcat -force fod_csf.mif fod_gm.mif - fod_all.mif')
     execute('mrview fod_all.mif -mode 1 -plane 2 -noannot -size 1000,1000 -interpolation 0 \
         -capture.folder QA -capture.prefix QA_fod_tissuemap_ -capture.grab -exit')
+    image_label_dict.update({'QA_fod_tissuemap_0000.png': 'Dhollander algo. tissue map (wm=blue,csf=red,gm=green)'})
 
     execute('mrview dwi_proc_FA.mif -mode 1 -plane 2 -noannot -size 1000,1000  \
         -odf.load_sh fod_wm_norm.mif \
         -capture.folder QA -capture.prefix QA_fod_wm_ -capture.grab -exit')
+    image_label_dict.update({'QA_fod_wm_0000.png': 'White matter fiber orientiation distributions (FODs)'})
 
     execute('fod2dec -force fod_wm_norm.mif fod_wm_norm_dec.mif -mask dwi_proc_mask.mif')
     execute('mrview fod_wm_norm_dec.mif -mode 1 -plane 2 -noannot -size 1000,1000 -interpolation 0 \
         -capture.folder QA -capture.prefix QA_fod_dec_ -capture.grab -exit')
+    image_label_dict.update({'QA_fod_dec_0000.png': 'Directionally-encoded color map, from FODs'})
 
     # Tractography
     execute('mrview dwi_proc_b0.nii -mode 2 -interpolation 0 -noannot -size 1000,1000 \
         -tractography.load tracks_10M_to*.tck -tractography.geometry lines \
         -tractography.opacity 0.1 \
         -capture.folder QA -capture.prefix QA_tck_2D_ -capture.grab -exit')
-
-    execute('mrview dwi_proc_b0.nii -mode 3 -interpolation 0 -noannot -size 1000,1000 -imagevisible 0 \
-        -tractography.load tracks_10M_to*.tck -tractography.geometry lines \
-        -tractography.opacity 0.05 \
-        -capture.folder QA -capture.prefix QA_tck_3D_ -capture.grab -exit')
+    image_label_dict.update({'QA_tck_2D_0000.png': 'Wholebrain tractography (colored by direction)'})
 
     execute('mrview dwi_proc_b0.nii -mode 2 -interpolation 0 -noannot -size 1000,1000 \
         -tractography.load tracks_10M_to*.tck -tractography.geometry lines \
         -tractography.tsf_load tracks_10M_to*_sift2_weights.txt -tractography.tsf_range 0,2.5 \
         -capture.folder QA -capture.prefix QA_tck_2D_weighted_ -capture.grab -exit')
+    image_label_dict.update({'QA_tck_2D_weighted_0000.png': 'Wholebrain tractography (colored by weight)'})
+
+    execute('mrview dwi_proc_b0.nii -mode 3 -interpolation 0 -noannot -size 1000,1000 -imagevisible 0 \
+        -tractography.load tracks_10M_to*.tck -tractography.geometry lines \
+        -tractography.opacity 0.08 \
+        -capture.folder QA -capture.prefix QA_tck_3D_ -capture.grab -exit')
+    image_label_dict.update({'QA_tck_3D_0000.png': 'Wholebrain tractography in 3D (colored by direction)'})
 
     # Motion parameters
     # Load eddy motion parameter data
@@ -587,35 +614,29 @@ def create_post_process_QA_figure(path_out):
     plt.savefig('QA/QA_outlier_map', dpi=PDF_DPI, facecolor='w')
     plt.close()
 
-    # Define dictionary of QA images and the information to include at the top
-    image_label_dict.update({
-        'QA_noise_0000.png': 'Estimated noise map',
-        'QA_b0_0000.png': 'B0 image (primary phase encode dir.)',
-        'QA_b0_revPE_0000.png': 'B0 image (reverse phase encode dir.)',
-        'QA_b0_topup_0000.png': 'Distortion-corrected B0 image',
-        'QA_motion_and_intensity.png': '',
-        'QA_outlier_map.png': '',
-        'QA_cnr_0000.png': 'Contrast to noise (CNR) map',
-        'QA_masks_0000.png': 'Eddy mask (white), MRtrix3 mask (red)',
-        'QA_fa_0000.png': 'Fractional anisotropy (FA) map (WM should be bright)',
-        'QA_md_0000.png': 'Mean diffusitivity (MD) map (CSF should be bright)',
-        'QA_struct2dwi_0000.png': 'Structural registration to DWI',
-        'QA_gmwmi_0000.png': 'Gray/White matter interface derived from FreeSurfer output',
-        'QA_dhollander_voxels_0000.png': 'Dhollander algo. voxels (wm=blue,csf=red,gm=green)',
-        'QA_fod_tissuemap_0000.png': 'Dhollander algo. tissue map (wm=blue,csf=red,gm=green)',
-        'QA_fod_wm_0000.png': 'White matter fiber orientiation distributions (FODs)',
-        'QA_fod_dec_0000.png': 'Directionally-encoded color map, from FODs',
-        'QA_tck_2D_0000.png': 'Wholebrain tractography (colored by direction)',
-        'QA_tck_2D_weighted_0000.png': 'Wholebrain tractography (colored by weight)',
-        'QA_tck_3D_0000.png': 'Wholebrain tractography in 3D (colored by direction)',
-    })
-
+    #################################
+    # Image Labeling
     # Common flags to pass to convert command
-    flags = '-bordercolor white -border 1 -gravity north -fill white -pointsize 35 -annotate 0'
+    flags = '-bordercolor white -border 1 -gravity north -fill white -pointsize 60 -annotate 0'
     # Add label to each image
     for image, label in image_label_dict.items():
         cmd = f'convert {flags} "{label}" QA/{image} QA/{image}'
         execute(f'{cmd}')
+
+    #################################
+    # Creation of final QA document
     # Stack all images vertically for final document
     lbls = ' QA/'.join(image_label_dict.keys())
     execute(f'convert -resize 1000 -append QA/{lbls} QA/QA_all.png')
+
+
+def clear_tmp(path_out, path_tmp, n_streamlines):
+    files_to_check = ['dwi_proc.mif',
+                      'fod_all.mif',
+                      f'tracks_{n_streamlines}.tck',
+                      '/QA/QA_all.png']
+    files_to_check_path = [path_out + '/' + s for s in files_to_check]
+
+    if all([os.path.exists(f) for f in files_to_check_path]):
+        # Remove tmp directory
+        shutil.rmtree(path_tmp)
