@@ -107,7 +107,7 @@ def copy_data_to_tmp_directory(path_tmp, dwi, revPE, struct, aseg):
         sys.exit()
 
 
-def prep_data(path, dwi, revPE):
+def prep_data(path, dwi, revPE, n_threads):
     print('Step 02: Preparing data for processing...')
     os.chdir(str(path))
 
@@ -123,15 +123,15 @@ def prep_data(path, dwi, revPE):
         # NOTE - Have to change DCM to dcm in file extension for MRTrix3 to recognize correctly
         for ii in range(len(dwi)):
             execute(f'cp {dwi[ii]} {dwi[ii]}.tmp.dcm')
-            execute(f'mrconvert {dwi[ii]}.tmp.dcm tmp_dwi_raw{str(ii)}.mif')
+            execute(f'mrconvert -nthreads {n_threads} {dwi[ii]}.tmp.dcm tmp_dwi_raw{str(ii)}.mif')
 
             # Convert reverse PE image to mif
         execute(f'cp {revPE} {revPE}.tmp.dcm')
-        execute(f'mrconvert {revPE}.tmp.dcm dwi_raw_revPE.mif')
+        execute(f'mrconvert -nthreads {n_threads} {revPE}.tmp.dcm dwi_raw_revPE.mif')
 
         # Combine the primary dwi images (if multiple)
         if len(dwi) > 1:
-            execute('mrcat -force -axis 3 tmp_dwi_raw*.mif dwi_raw.mif')
+            execute(f'mrcat -force -nthreads {n_threads} -axis 3 tmp_dwi_raw*.mif dwi_raw.mif')
         else:
             execute('cp tmp_dwi_raw0.mif dwi_raw.mif')
 
@@ -165,14 +165,14 @@ def prep_data(path, dwi, revPE):
 
         # Convert to MRtrix3 mif format
         for ii in range(len(dwi)):
-            execute(f'mrconvert -fslgrad {bvec[ii]} {bval[ii]} {dwi[ii]} tmp_dwi_raw{str(ii)}.mif')
+            execute(f'mrconvert -nthreads {n_threads} -fslgrad {bvec[ii]} {bval[ii]} {dwi[ii]} tmp_dwi_raw{str(ii)}.mif')
 
             # Convert reverse PE image to mif
-        execute(f'mrconvert -fslgrad {bvec_revPE} {bval_revPE} {revPE} dwi_raw_revPE.mif')
+        execute(f'mrconvert -nthreads {n_threads} -fslgrad {bvec_revPE} {bval_revPE} {revPE} dwi_raw_revPE.mif')
 
         # Combine the primary dwi images (if multiple)
         if len(dwi) > 1:
-            execute('mrcat -force -axis 3 tmp_dwi_raw*.mif dwi_raw.mif')
+            execute(f'mrcat -force -nthreads {n_threads} -axis 3 tmp_dwi_raw*.mif dwi_raw.mif')
         else:
             execute('cp tmp_dwi_raw0.mif dwi_raw.mif')
 
@@ -185,26 +185,26 @@ def prep_data(path, dwi, revPE):
         sys.exit()
 
 
-def run_denoising(path):
+def run_denoising(path, n_threads):
     print('Step 03: Denoising the raw data...')
     os.chdir(str(path))
     #################################################################
     ## Perform initial denoising of the DWI data (per MRTrix3 recommendation)
-    execute('dwidenoise -force -noise dwi_raw_noise.mif dwi_raw.mif dwi_raw_dn.mif')
+    execute(f'dwidenoise -nthreads {n_threads} -force -noise dwi_raw_noise.mif dwi_raw.mif dwi_raw_dn.mif')
     # execute('dwidenoise -noise dwi_raw_revPE_noise.mif dwi_raw_revPE.mif dwi_raw_revPE_dn.mif')
 
     # Get the first image (b0) of the DWI data and the reverse phase-encoded scan
-    execute('dwiextract -force dwi_raw_dn.mif -bzero dwi_raw_dn_b0.mif')
-    execute('dwiextract -force dwi_raw_revPE.mif -bzero dwi_raw_revPE_b0.mif')
+    execute(f'dwiextract -force -nthreads {n_threads} dwi_raw_dn.mif -bzero dwi_raw_dn_b0.mif')
+    execute(f'dwiextract -force -nthreads {n_threads} dwi_raw_revPE.mif -bzero dwi_raw_revPE_b0.mif')
 
     # Combine the initial b0 images into an image pair for topup
-    execute('mrconvert -force -coord 3 0 -axes 0,1,2 dwi_raw_dn_b0.mif tmp1.mif')
-    execute('mrconvert -force -coord 3 0 -axes 0,1,2 dwi_raw_revPE_b0.mif tmp2.mif')
-    execute('mrcat -axis 3 tmp1.mif tmp2.mif dwi_raw_dn_b0_pair.mif')
+    execute(f'mrconvert -force -nthreads {n_threads} -coord 3 0 -axes 0,1,2 dwi_raw_dn_b0.mif tmp1.mif')
+    execute(f'mrconvert -force -nthreads {n_threads} -coord 3 0 -axes 0,1,2 dwi_raw_revPE_b0.mif tmp2.mif')
+    execute(f'mrcat -nthreads {n_threads} -axis 3 tmp1.mif tmp2.mif dwi_raw_dn_b0_pair.mif')
     execute('rm -f tmp*.mif')
 
 
-def run_topup_and_eddy(path):
+def run_topup_and_eddy(path, n_threads):
     print('Step 04: Performing topup and eddy motion correction (this can take a few hours)...')
     os.chdir(str(path))
     #################################################################
@@ -216,15 +216,15 @@ def run_topup_and_eddy(path):
     # --mporder and --slspec flags described here https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy/UsersGuide
     # Also see for more info https://mrtrix.readthedocs.io/en/latest/dwi_preprocessing/dwifslpreproc.html
     # We will also likely be good to turn on --estimate_move_by_susceptibility for high motion
-    execute('export OMP_NUM_THREADS=15; \
+    execute(f'export OMP_NUM_THREADS={nthreads}; \
         dwifslpreproc dwi_raw_dn.mif dwi_proc.mif \
         -rpe_pair -se_epi dwi_raw_dn_b0_pair.mif -pe_dir PA -align_seepi -nocleanup \
         -export_grad_fsl dwi_raw_fsl.bvec dwi_raw_fsl.bval \
         -eddy_options " --repol --cnr_maps --data_is_shelled --slm=linear" \
-        -eddyqc_all QA -nthreads 12')
+        -eddyqc_all QA -nthreads {n_threads}')
 
 
-def prep_seg_for_ACT(path, aseg, struct):
+def prep_seg_for_ACT(path, aseg, struct, n_threads):
     print('Step 05: Preparing segmentation for anatomically constrained tractography...')
     os.chdir(str(path))
     # Change paths of input files to those in the tmp directory
@@ -239,7 +239,7 @@ def prep_seg_for_ACT(path, aseg, struct):
     execute(f'mri_convert {struct} struct.nii')
 
     # Extract b0 (assumes first image)
-    execute('mrconvert -force -coord 3 0 -axes 0,1,2 dwi_proc.mif dwi_proc_b0.nii')
+    execute(f'mrconvert -force -nthreads {n_threads} -coord 3 0 -axes 0,1,2 dwi_proc.mif dwi_proc_b0.nii')
 
     # Register DWI to structural image
     execute('flirt -dof 6 -interp sinc -searchrx -180 180 -searchry -180 180 -searchrz -180 180 \
@@ -252,73 +252,73 @@ def prep_seg_for_ACT(path, aseg, struct):
     flirt_import dwi_proc_b0_2struct.xform.mrtrix.txt')
 
     # Sample structural to DWI space (using inverse transform)
-    execute('mrtransform -force struct.nii \
+    execute(f'mrtransform -force -nthreads {n_threads} struct.nii \
         -linear dwi_proc_b0_2struct.xform.mrtrix.txt \
         struct.2dwi.nii -inverse')
 
     # Sample segmentation to DWI space (using inverse transform)    
-    execute('mrtransform -force aseg.nii \
+    execute(f'mrtransform -force -nthreads {n_threads} aseg.nii \
         -linear dwi_proc_b0_2struct.xform.mrtrix.txt \
         aseg.2dwi.nii -inverse')
 
     # Generate the 5 tissue file for ACT 
-    execute('5ttgen freesurfer -lut /Applications/freesurfer/FreeSurferColorLUT.txt -force \
+    execute(f'5ttgen -nthreads {n_threads} freesurfer -lut /Applications/freesurfer/FreeSurferColorLUT.txt -force \
         aseg.2dwi.nii aseg_5ttgen.mif')
 
     # Generate GM/WM interface for seeding
-    execute('5tt2gmwmi -force aseg_5ttgen.mif aseg_5tt_gmwmi.mif')
+    execute(f'5tt2gmwmi -force -nthreads {n_threads} aseg_5ttgen.mif aseg_5tt_gmwmi.mif')
 
 
-def estimate_resp_function(path):
+def estimate_resp_function(path, n_threads):
     print('Step 06: Estimating tissue response functions...')
     #################################################################
     ## DWI Response Function Estimation
 
     # Get DWI mask
-    execute('dwi2mask -force dwi_proc.mif dwi_proc_mask.mif')
+    execute(f'dwi2mask -nthreads {n_threads} -force dwi_proc.mif dwi_proc_mask.mif')
 
     # Create FA and MD maps for future reference and QA
-    execute('dwi2tensor -force dwi_proc.mif tmp.mif; \
+    execute(f'dwi2tensor -force -nthreads {n_threads} dwi_proc.mif tmp.mif; \
          tensor2metric -mask dwi_proc_mask.mif -fa dwi_proc_FA.mif tmp.mif; \
          tensor2metric -mask dwi_proc_mask.mif -adc dwi_proc_MD.mif tmp.mif; \
          rm -f tmp.mif')
 
     # NOTE - estimated here for individual subject but,
     # in case of group analysis, best to take group averaged functions.
-    execute('dwi2response -force dhollander dwi_proc.mif \
+    execute(f'dwi2response -force -nthreads {n_threads} dhollander dwi_proc.mif \
         dhollander_wm_response_sub.txt \
         dhollander_gm_response_sub.txt \
         dhollander_csf_response_sub.txt \
         -voxels dhollander_voxels_sub.mif')
 
 
-def run_csd(path):
+def run_csd(path, n_threads):
     print('Step 07: Running constrained spherical deconvolution...')
     os.chdir(str(path))
     #################################################################
     ## Run Constrained Spherical Deconvolution
     # Generates fiber orientation distribution at each voxel
     ## Multi-shell multi-tissue constrained spherical deconvolution  
-    execute('dwi2fod -force msmt_csd -mask dwi_proc_mask.mif  dwi_proc.mif \
+    execute(f'dwi2fod -force -nthreads {n_threads} msmt_csd -mask dwi_proc_mask.mif  dwi_proc.mif \
         *wm_response*.txt fod_wm.mif  \
         *gm_response*.txt fod_gm.mif  \
         *csf_response*.txt fod_csf.mif')
 
     ## Run the normalizaton/bias correction step
-    execute('mtnormalise -force fod_wm.mif fod_wm_norm.mif \
+    execute(f'mtnormalise -force -nthreads {n_threads} fod_wm.mif fod_wm_norm.mif \
          fod_gm.mif fod_gm_norm.mif \
          fod_csf.mif fod_csf_norm.mif \
          -mask dwi_proc_mask.mif')
 
 
-def generate_streamlines_and_run_sift2(path, n_streamlines):
+def generate_streamlines_and_run_sift2(path, n_streamlines, n_threads):
     print('Step 08: Generating streamlines and computing their weights...')
     os.chdir(str(path))
     #################################################################
     ## Generate Streamlines
     # NOTE - the algorithm and cutoff settings are actually the defaults,
     # but I set them here for clarity
-    execute(f'tckgen -force fod_wm_norm.mif tracks_{n_streamlines}.tck \
+    execute(f'tckgen -force -nthreads {n_threads} fod_wm_norm.mif tracks_{n_streamlines}.tck \
         -backtrack -crop_at_gmwmi -info \
         -act aseg_5ttgen.mif  -seed_gmwmi aseg_5tt_gmwmi.mif \
         -algorithm iFOD2 -select {n_streamlines} -cutoff 0.05')
@@ -331,12 +331,14 @@ def generate_streamlines_and_run_sift2(path, n_streamlines):
     # in further track quantification tools using "-tck_weights_in" flag
     # ALSO NOTE - I removed the -fd_scale_gm flag due to the use of
     # multi-tissue FOD estimation
-    execute(f'tcksift2 -force tracks_{n_streamlines}.tck fod_wm_norm.mif tracks_{n_streamlines}_sift2_weights.txt \
+    execute(f'tcksift2 -force -nthreads {n_threads} \
+        tracks_{n_streamlines}.tck fod_wm_norm.mif tracks_{n_streamlines}_sift2_weights.txt \
         -act aseg_5ttgen.mif -info \
         -out_mu tracks_{n_streamlines}_sift2_weights_prop_coeff.txt')
 
     #  Generate a smaller number of streamlines for QA and viewing
-    execute(f'tckedit -force -number 200k tracks_{n_streamlines}.tck tracks_{n_streamlines}_to200k.tck \
+    execute(f'tckedit -force -nthreads {n_threads} -number 200k \
+        tracks_{n_streamlines}.tck tracks_{n_streamlines}_to200k.tck \
         -tck_weights_in tracks_{n_streamlines}_sift2_weights.txt \
         -tck_weights_out tracks_{n_streamlines}_to200k_sift2_weights.txt')
 
