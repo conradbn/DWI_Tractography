@@ -80,8 +80,10 @@ def check_inputs(path_out, path_tmp, dwi, revPE, struct, aseg, n_streamlines):
 def copy_data_to_tmp_directory(path_tmp, dwi, revPE, struct, aseg):
     print('Step 01: Copying data to temporary directory...')
     # Make temporary directory
-    os.mkdir(str(path_tmp))
+    if not os.path.isdir(str(path_tmp)):
+        os.mkdir(str(path_tmp))
     os.chdir(str(path_tmp))
+
     # Check if DWI is list of files or single file
     if isinstance(dwi, list):
         dwi_all = ' '.join(dwi)
@@ -190,16 +192,16 @@ def run_denoising(path, n_threads):
     os.chdir(str(path))
     #################################################################
     ## Perform initial denoising of the DWI data (per MRTrix3 recommendation)
-    execute(f'dwidenoise -nthreads {n_threads} -force -noise dwi_raw_noise.mif dwi_raw.mif dwi_raw_dn.mif')
+    execute(f'dwidenoise -nthreads {n_threads} -noise dwi_raw_noise.mif dwi_raw.mif dwi_raw_dn.mif')
     # execute('dwidenoise -noise dwi_raw_revPE_noise.mif dwi_raw_revPE.mif dwi_raw_revPE_dn.mif')
 
     # Get the first image (b0) of the DWI data and the reverse phase-encoded scan
-    execute(f'dwiextract -force -nthreads {n_threads} dwi_raw_dn.mif -bzero dwi_raw_dn_b0.mif')
+    execute(f'dwiextract -nthreads {n_threads} dwi_raw_dn.mif -bzero dwi_raw_dn_b0.mif')
     execute(f'dwiextract -force -nthreads {n_threads} dwi_raw_revPE.mif -bzero dwi_raw_revPE_b0.mif')
 
     # Combine the initial b0 images into an image pair for topup
-    execute(f'mrconvert -force -nthreads {n_threads} -coord 3 0 -axes 0,1,2 dwi_raw_dn_b0.mif tmp1.mif')
-    execute(f'mrconvert -force -nthreads {n_threads} -coord 3 0 -axes 0,1,2 dwi_raw_revPE_b0.mif tmp2.mif')
+    execute(f'mrconvert -nthreads {n_threads} -coord 3 0 -axes 0,1,2 dwi_raw_dn_b0.mif tmp1.mif')
+    execute(f'mrconvert -nthreads {n_threads} -coord 3 0 -axes 0,1,2 dwi_raw_revPE_b0.mif tmp2.mif')
     execute(f'mrcat -nthreads {n_threads} -axis 3 tmp1.mif tmp2.mif dwi_raw_dn_b0_pair.mif')
     execute('rm -f tmp*.mif')
 
@@ -216,7 +218,7 @@ def run_topup_and_eddy(path, n_threads):
     # --mporder and --slspec flags described here https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/eddy/UsersGuide
     # Also see for more info https://mrtrix.readthedocs.io/en/latest/dwi_preprocessing/dwifslpreproc.html
     # We will also likely be good to turn on --estimate_move_by_susceptibility for high motion
-    execute(f'export OMP_NUM_THREADS={nthreads}; \
+    execute(f'export OMP_NUM_THREADS={n_threads}; \
         dwifslpreproc dwi_raw_dn.mif dwi_proc.mif \
         -rpe_pair -se_epi dwi_raw_dn_b0_pair.mif -pe_dir PA -align_seepi -nocleanup \
         -export_grad_fsl dwi_raw_fsl.bvec dwi_raw_fsl.bval \
@@ -319,7 +321,7 @@ def generate_streamlines_and_run_sift2(path, n_streamlines, n_threads):
     # NOTE - the algorithm and cutoff settings are actually the defaults,
     # but I set them here for clarity
     execute(f'tckgen -force -nthreads {n_threads} fod_wm_norm.mif tracks_{n_streamlines}.tck \
-        -backtrack -crop_at_gmwmi -info \
+        -backtrack -crop_at_gmwmi -quiet \
         -act aseg_5ttgen.mif  -seed_gmwmi aseg_5tt_gmwmi.mif \
         -algorithm iFOD2 -select {n_streamlines} -cutoff 0.05')
 
@@ -431,7 +433,7 @@ def create_post_process_QA_figure(path_out):
 
     # 5TT struct over b0
     execute('mrview dwi_proc_b0.nii -mode 2 -interpolation 0 -noannot -size 1000,1000 \
-        -overlay.load struct.2dwi.nii -overlay.colourmap 1 -overlay.interpolation 0 -overlay.opacity 0.3 \
+        -overlay.load "struct.2dwi.nii" -overlay.colourmap 1 -overlay.interpolation 0 -overlay.opacity 0.2 \
         -capture.folder QA -capture.prefix QA_struct2dwi_ -capture.grab -exit')
     image_label_dict.update({'QA_struct2dwi_0000.png': 'Structural registration to DWI'})
 

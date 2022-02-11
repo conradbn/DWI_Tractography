@@ -41,6 +41,6 @@ def prep_inputs(subj, year):
 
     # Set the number of threads for MRtrix3 commands to use
     # Restricting to allow for parallel processing of multiple subject
-    n_threads = '4'
+    n_threads = '3'
 
     return path_out, path_tmp, path_data, dwi, revPE, scan_id, struct, aseg, n_streamlines, n_threads

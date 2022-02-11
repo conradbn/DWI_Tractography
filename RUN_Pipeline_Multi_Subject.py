@@ -14,7 +14,7 @@ run_split = 0
 subs_tmp = subs_split[run_split]
 
 # Loop through data list
-for s in subs_tmp:
+for s in subs_tmp[5:]:
     # Clear console for each subject
     os.system('clear')
 
