@@ -601,6 +601,7 @@ def create_post_process_QA_figure(path_out):
         txt = f.readlines()
         for i in np.arange(1, len(txt)):
             rows.append(_str2list(txt[i].strip('\n')))
+    rows = list(filter(None, rows))
     outlier_array = np.array(rows)
     outlier_map = np.transpose(outlier_array)
 
