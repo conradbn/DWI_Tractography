@@ -641,7 +641,13 @@ def clear_tmp(path_out, path_tmp, n_streamlines):
                       f'tracks_{n_streamlines}.tck',
                       '/QA/QA_all.png']
     files_to_check_path = [path_out + '/' + s for s in files_to_check]
-
+    print(['Checking if preprocessed DWI, FOD, streamline (tck), and QA_all.png files exist...'])
+    
     if all([os.path.exists(f) for f in files_to_check_path]):
         # Remove tmp directory
         shutil.rmtree(path_tmp)
+        print(['*** All exist in the output directory! ***'])    
+        print(['*** PROCESS COMPLETE! ***'])
+    else:
+        print(['*** File(s) NOT FOUND in output directory... Check the log file for errors ***'])
+        print(['*** PROCESS FAILED ***'])
